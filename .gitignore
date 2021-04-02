@@ -1,4 +1,4 @@
 **/node_modules/**
-dist/*
+build/*
 api-key.txt
 mongo-connection.txt
