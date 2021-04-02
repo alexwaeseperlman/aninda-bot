@@ -1,0 +1,23 @@
+version: '3.1'
+
+services:
+    bot:
+        build: .
+        secrets:
+            - api-key
+    #mongo:
+    #    image: mongo
+    #    volumes:
+    #        - mongodata:/data/db
+    #    restart: always
+    #    environment:
+    #        MONGO_INITDB_ROOT_USERNAME: root
+    #        MONGO_INITDB_ROOT_PASSWORD: password
+
+secrets:
+    api-key: 
+        file: ./api-key.txt
+    mongo-connection:
+        file: ./mongo-connection.txt
+#volumes:
+#    mongodata:
