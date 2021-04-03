@@ -1,4 +1,3 @@
 **/node_modules/**
 build/*
-api-key.txt
-mongo-connection.txt
+.env
