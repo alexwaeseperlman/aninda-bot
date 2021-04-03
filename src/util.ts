@@ -6,7 +6,7 @@ const { createLogger, format, transports } = winston;
 export function getLogger(name: string, color: (s: string) => string) {
 	name = color(name.padStart(8, ' '));
 	return createLogger({
-		level: 'verbose',
+		level: 'debug',
 		format: format.combine(
 			format.colorize(),
 			format.timestamp(),

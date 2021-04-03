@@ -9,7 +9,7 @@ let apiKey = "";
 
 try {
 	if (process.env.API_KEY) apiKey = process.env.API_KEY;
-	apiKey = fs.readFileSync('/run/secrets/api-key').toString();
+	apiKey = fs.readFileSync('/run/secrets/api-key').toString().replace('\n', '');
 }
 catch (err) {
 	if (apiKey == "") {
@@ -22,7 +22,7 @@ let mongoConnection = "";
 
 try {
 	if (process.env.MONGO_CONNECTION) mongoConnection = process.env.MONGO_CONNECTION;
-	mongoConnection = fs.readFileSync('/run/secrets/mongo-connection').toString();
+	mongoConnection = fs.readFileSync('/run/secrets/mongo-connection').toString().replace('\n', '');
 }
 catch (err) {
 	if (mongoConnection == "") {

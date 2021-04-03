@@ -5,6 +5,7 @@ services:
         build: .
         secrets:
             - api-key
+            - mongo-connection
     #mongo:
     #    image: mongo
     #    volumes:
