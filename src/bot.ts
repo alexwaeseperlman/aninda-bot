@@ -4,15 +4,16 @@ import * as winston from 'winston';
 import { getLogger } from './util';
 import * as chalk from 'chalk';
 
+const dateSizes: {[k: string]: [number, number]} = { s: [1000, 60], m: [60000, 60], h: [60000 * 60, 24], d: [1000 * 3600 * 24, 30], M: [1000 * 3600 * 24 * 30, 12], y: [1000 * 3600 * 24 * 30 * 12, Infinity] }
+
 function msToReadable(ms: number): string {
-	const sizes: {[k: string]: [number, number]} = { s: [1000, 60], m: [60000, 60], h: [60000 * 60, 24], d: [1000 * 3600 * 24, 30], M: [1000 * 3600 * 24 * 30, 12] }
-	const order = 'Mdhms';
+	const order = 'yMdhms';
 
 	let out = '';
 	let end = order.length;
 
 	for (let i = 0; i < end && i < order.length; i++) {
-		const amount = Math.floor(ms / sizes[order[i]][0]) % sizes[order[i]][1];
+		const amount = Math.floor(ms / dateSizes[order[i]][0]) % dateSizes[order[i]][1];
 		if (amount > 0) {
 			if (end == order.length) end = i + 3;
 			out += amount + order[i] + ' ';
@@ -40,14 +41,25 @@ export default class TimerBot {
 
 	commands: { [key: string]: (msg: CommandData) => Promise<boolean> } = {
 		"top": async (msg: CommandData) => {
-			let startTime = TimerBot.parseTimeInput(msg.command);
+			let startTime = 0;
+			for (let i = 0; i < msg.command.length; i++) {
+				if (msg.command[i] == '-t' || msg.command[i] == '--time') {
+					try {
+						startTime = TimerBot.parseTimeInput(msg.command[i + 1]);
+					}
+					catch (err) {
+						msg.channel.send(err.message + '. It should look like this: 1M15d7h10m5s');
+						return false;
+					}
+				}
+			}
 			const count = 5;
 			const targets = msg.targets.map((u) => u.id);
 
 			const times = await this.db.topTimes({ count, userID: targets.length == 1 ? (targets[0]) : (targets.length == 0 ? undefined : targets), startTime });
 			const out = new Discord.MessageEmbed()
 					.setColor('#da004e')
-					.setTitle(`Pairs`)
+					.setTitle(startTime == 0 ? `Top pairs for all time` : `Top pairs for the past ${msToReadable(Date.now() - startTime)}`)
 					.addFields(times.map((time) => {
 						return { name: msToReadable(time.time), value: `<@${time._id.id}> with <@${time._id.with}>`}
 					}))
@@ -219,11 +231,20 @@ export default class TimerBot {
 	}
 
 	// TODO: allow people to send a minimum and maximum time for queries
-	static parseTimeInput(command: string[]): number {
-		for (let i = 0; i < command.length; i++) {
+	static parseTimeInput(command: string): number {
+		const regex = /(\d+[a-zA-Z])/g;
+		const matches = command.match(regex);
+		if (!matches) throw new Error('Invalid time input');
+		
+		let timeValue = Date.now();
+		matches.forEach((match: string) => {
+			const unit = match[match.length - 1];
+			if (!(unit in dateSizes)) throw new Error('Invalid date unit');
+			const value = parseInt(match);
+			if (isNaN(value)) throw new Error('Invalid value for date unit');
+			timeValue -= value * dateSizes[unit][0];
+		});
 
-		}
-
-		return 0;
+		return timeValue;
 	}
 }
