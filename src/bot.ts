@@ -41,19 +41,8 @@ export default class TimerBot {
 
 	commands: { [key: string]: (msg: CommandData) => Promise<boolean> } = {
 		"top": async (msg: CommandData) => {
-			let startTime = 0;
-			for (let i = 0; i < msg.command.length; i++) {
-				if (msg.command[i] == '-t' || msg.command[i] == '--time') {
-					try {
-						startTime = TimerBot.parseTimeInput(msg.command[i + 1]);
-					}
-					catch (err) {
-						msg.channel.send(err.message + '. It should look like this: 1M15d7h10m5s');
-						return false;
-					}
-				}
-			}
-			const count = 5;
+			const startTime = TimerBot.getTimeInput(msg);
+			const count = TimerBot.getCountInput(msg);
 			const targets = msg.targets.map((u) => u.id);
 
 			const times = await this.db.topTimes({ count, userID: targets.length == 1 ? (targets[0]) : (targets.length == 0 ? undefined : targets), startTime });
@@ -246,5 +235,29 @@ export default class TimerBot {
 		});
 
 		return timeValue;
+	}
+
+	static getTimeInput(msg: CommandData): number {
+		for (let i = 0; i < msg.command.length; i++) {
+			if (msg.command[i] == '-t' || msg.command[i] == '--time') {
+				try {
+					return TimerBot.parseTimeInput(msg.command[i + 1]);
+				}
+				catch (err) {
+					msg.channel.send(err.message + '. It should look like this: 1M15d7h10m5s');
+					return 0;
+				}
+			}
+		}
+		return 0;
+	}
+
+	static getCountInput(msg: CommandData): number {
+		for (let i = 0; i < msg.command.length; i++) {
+			if (msg.command[i] == '-c' || msg.command[i] == '--count') {
+				return parseInt(msg.command[i + 1]) || 5;
+			}
+		}
+		return 5;
 	}
 }
