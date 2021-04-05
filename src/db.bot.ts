@@ -54,6 +54,7 @@ export interface EventTimeQuery {
 export interface PairsQuery extends EventTimeQuery {
 	count?: number;
 	event?: 'connect';
+	userMask?: string[];
 }
 
 export default class TimerDB {
@@ -64,12 +65,15 @@ export default class TimerDB {
 			userID,
 			startTime,
 			endTime,
-			count
-		}: { guildID?: string | string[], channelID?: string | string[], userID?: string | string[], startTime?: number, endTime?: number, count?: number}) => {
+			count,
+			userMask
+		}: PairsQuery) => {
 			const timesMatch = this.queries['event-times']({ startTime, endTime, userID, channelID, guildID, event: 'connect' });
+			const lookupMatch: any = { '$match': { 'type': 'connect', '$expr': { '$and': [ { '$gte': [ '$endTime', '$$startTime' ] }, { '$lte': [ '$time', '$$endTime' ]}, { '$eq': [ '$channelID', '$$channelID' ] }, { '$ne': [ '$userID', '$$userID' ] } ] } } };
+			if (userMask) lookupMatch.$match.$expr.$and.push({ '$in': [ '$userID', userMask ] });
 			// MongoDB magic
 			return [
-				...timesMatch, { '$lookup': { 'from': 'times', 'let': { 'startTime': '$time', 'endTime': '$endTime', 'channelID': '$channelID', 'userID': '$userID' }, 'pipeline': [ { '$match': { 'type': 'connect', '$expr': { '$and': [ { '$gte': [ '$endTime', '$$startTime' ] }, { '$lte': [ '$time', '$$endTime' ]}, { '$eq': [ '$channelID', '$$channelID' ] }, { '$ne': [ '$userID', '$$userID' ] } ] } } }, { '$project': { 'userID': 1, 'together': { '$subtract': [ { '$min': [ '$endTime', '$$endTime' ] }, { '$max': [ '$time', '$$startTime' ] } ] } } }, { '$group': { 'time': { '$sum': '$together' }, '_id': '$userID' } } ], 'as': 'timeWith' } }, { '$unwind': { 'path': '$timeWith' } }, { '$project': { 'userID': 1, 'with': '$timeWith._id', 'time': '$timeWith.time' } }, { '$group': { 'time': { '$sum': '$time' }, '_id': { 'id': '$userID', 'with': '$with' } } },{ '$group': { '_id': { 'id': { '$min': ['$_id.id', '$_id.with'] }, 'with': { '$max': ['$_id.id', '$_id.with'] } }, 'time': { '$avg': '$time' }, 'reps': { '$sum': 1 } } }, { '$sort': { 'time': -1 } }, { '$limit': count }] 
+				...timesMatch, { '$lookup': { 'from': 'times', 'let': { 'startTime': '$time', 'endTime': '$endTime', 'channelID': '$channelID', 'userID': '$userID' }, 'pipeline': [ lookupMatch, { '$project': { 'userID': 1, 'together': { '$subtract': [ { '$min': [ '$endTime', '$$endTime' ] }, { '$max': [ '$time', '$$startTime' ] } ] } } }, { '$group': { 'time': { '$sum': '$together' }, '_id': '$userID' } } ], 'as': 'timeWith' } }, { '$unwind': { 'path': '$timeWith' } }, { '$project': { 'userID': 1, 'with': '$timeWith._id', 'time': '$timeWith.time' } }, { '$group': { 'time': { '$sum': '$time' }, '_id': { 'id': '$userID', 'with': '$with' } } },{ '$group': { '_id': { 'id': { '$min': ['$_id.id', '$_id.with'] }, 'with': { '$max': ['$_id.id', '$_id.with'] } }, 'time': { '$avg': '$time' }, 'reps': { '$sum': 1 } } }, { '$sort': { 'time': -1 } }, { '$limit': count }] 
 		}, 
 		"event-times": ({ 
 			startTime, 

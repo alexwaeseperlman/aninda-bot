@@ -1,5 +1,5 @@
 import * as Discord from 'discord.js';
-import TimerDB, { EventType, TimerEvent } from './db.bot';
+import TimerDB, { EventType, PairsQuery, TimerEvent } from './db.bot';
 import * as winston from 'winston';
 import { getLogger } from './util';
 import * as chalk from 'chalk';
@@ -39,23 +39,15 @@ export default class TimerBot {
 	client: Discord.Client;
 	db: TimerDB;
 
-	commands: { [key: string]: (msg: CommandData) => Promise<boolean> } = {
+	commands: { [key: string]: (msg: CommandData) => Promise<boolean> } = ({
 		"top": async (msg: CommandData) => {
-			const startTime = TimerBot.getTimeInput(msg);
-			const count = TimerBot.getCountInput(msg);
-			const targets = msg.targets.map((u) => u.id);
-
-			const times = await this.db.topTimes({ count, userID: targets.length == 1 ? (targets[0]) : (targets.length == 0 ? undefined : targets), startTime });
-			const out = new Discord.MessageEmbed()
-					.setColor('#da004e')
-					.setTitle(startTime == 0 ? `Top pairs for all time` : `Top pairs for the past ${msToReadable(Date.now() - startTime)}`)
-					.addFields(times.map((time) => {
-						return { name: msToReadable(time.time), value: `<@${time._id.id}> with <@${time._id.with}>`}
-					}))
-					.setTimestamp();
-			this.logger.verbose(`Sending pairs data to ${msg.guild?.id} for ${msg.sender?.id}`);
-			msg.channel.send(out);
-			return true;
+			return await this.queryTop(msg);
+		},
+		"with": async (msg: CommandData) => {
+			return await this.queryTop(msg, (query: PairsQuery) => {
+				if (Array.isArray(query.userID)) query.userMask = query.userID;
+				return query;
+			});
 		},
 		"me": async (msg: CommandData) => {
 			msg.targets.unshift(msg.sender);
@@ -65,7 +57,7 @@ export default class TimerBot {
 			msg.channel.send(`Use '.pairs me' to get your top pairs, or '.pairs top' to get this server's top pairs`);
 			return true;
 		}
-	}
+	})
 
 	constructor(private token: string, 
 				private commandPrefix: string = '.pairs', 
@@ -260,4 +252,23 @@ export default class TimerBot {
 		}
 		return 5;
 	}
+
+	async queryTop(msg: CommandData, queryModifier: (query: PairsQuery) => PairsQuery = o => o): Promise<boolean> {
+			this.logger.debug(`'top' command contains: ${msg.command.join(', ')}`);
+			const startTime = TimerBot.getTimeInput(msg);
+			const count = TimerBot.getCountInput(msg);
+			const targets = msg.targets.map((u) => u.id);
+
+			const times = await this.db.topTimes(queryModifier({ count, userID: targets.length == 1 ? (targets[0]) : (targets.length == 0 ? undefined : targets), startTime }));
+			const out = new Discord.MessageEmbed()
+					.setColor('#da004e')
+					.setTitle(startTime == 0 ? `Top pairs for all time` : `Top pairs for the past ${msToReadable(Date.now() - startTime)}`)
+					.addFields(times.map((time) => {
+						return { name: msToReadable(time.time), value: `<@${time._id.id}> with <@${time._id.with}>`}
+					}))
+					.setTimestamp();
+			this.logger.verbose(`Sending pairs data to ${msg.guild?.id} for ${msg.sender?.id}`);
+			msg.channel.send(out);
+			return true;
+		}
 }
