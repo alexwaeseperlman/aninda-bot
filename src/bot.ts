@@ -1,8 +1,9 @@
 import * as Discord from 'discord.js';
-import TimerDB, { EventType, PairsQuery, TimerEvent } from './db.bot';
+import TimerDB, { EventType } from './db.bot';
 import * as winston from 'winston';
 import { getLogger } from './util';
 import * as chalk from 'chalk';
+import {PairsQuery} from './queries/pairs';
 
 const dateSizes: {[k: string]: [number, number]} = { s: [1000, 60], m: [60000, 60], h: [60000 * 60, 24], d: [1000 * 3600 * 24, 30], M: [1000 * 3600 * 24 * 30, 12], y: [1000 * 3600 * 24 * 30 * 12, Infinity] }
 
