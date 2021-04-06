@@ -5,13 +5,3 @@ services:
         build: .
         env_file: 
             - .env
-    #mongo:
-    #    image: mongo
-    #    volumes:
-    #        - mongodata:/data/db
-    #    restart: always
-    #    environment:
-    #        MONGO_INITDB_ROOT_USERNAME: root
-    #        MONGO_INITDB_ROOT_PASSWORD: password
-#volumes:
-#    mongodata:
