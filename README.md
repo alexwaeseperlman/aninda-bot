@@ -1,4 +1,13 @@
 # Readme
+## What is this? 
+Aninda-bot is a Discord bot that times the amount of time poeple spend together in call. 
+
+## How does it work?
+Every time a user starts performing one of the tracked actions (e.g. by muting themself or joining a call) an entry with the start time is put into the database. When they finish the action (e.g. by unmuting/leaving) that entry is updated with the end time. The time each user spends together is calculated any time the bot is queried. 
+
+Calculating times as needed will probably lead to issues in the future as the database grows because a command like `top` is O(n^2) for the size of the database. I can think of a few ways to optimize this but it probably won't be necessary for a long time. 
+
+
 ## Usage
 The bot currently has three commands implemented.
 ### With
