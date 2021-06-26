@@ -1,5 +1,5 @@
 import * as Discord from 'discord.js';
-import TimerDB, { EventType } from './db.bot';
+import TimerDB, { EventType, TimerEventStart } from './db.bot';
 import * as winston from 'winston';
 import { getLogger } from './util';
 import * as chalk from 'chalk';
@@ -42,7 +42,10 @@ export default class TimerBot {
 
 	commands: { [key: string]: (msg: CommandData) => Promise<boolean> } = ({
 		"top": async (msg: CommandData) => {
-			return await this.queryTop(msg);
+			return await this.queryTop(msg, (query: PairsQuery) => {
+				query.noSelf = true;
+				return query;
+			});
 		},
 		"with": async (msg: CommandData) => {
 			return await this.queryTop(msg, (query: PairsQuery) => {
@@ -57,6 +60,17 @@ export default class TimerBot {
 		"help": async (msg: CommandData) => {
 			msg.channel.send(`Use '.pairs me' to get your top pairs, or '.pairs top' to get this server's top pairs`);
 			return true;
+		},
+		"logdump": async (msg: CommandData) => {
+			msg.channel.send(`Calling log dump`);
+			this.db.logDump();
+			return true;
+		},
+		"usage": async (msg: CommandData) => {
+			return await this.queryTop(msg, (query: PairsQuery) => {
+				query.onlySelf = true;
+				return query;
+			});
 		}
 	})
 
@@ -76,6 +90,7 @@ export default class TimerBot {
 	registerListeners(): void {
 		this.client.on('ready', async () => {
 			this.logger.info(`${this.client.user?.username} connected to API`);
+			await this.db.verifyAll();
 			await this.db.verifyEvents(this);
 		});
 
@@ -96,7 +111,7 @@ export default class TimerBot {
 			const command = this.parseMessage(msg);
 		});
 		this.client.on('voiceStateUpdate', (oldState: Discord.VoiceState, newState: Discord.VoiceState) => {
-			this.voiceStateUpdate(oldState, newState)
+			this.updateVoiceState(newState, oldState)
 		})
 	}
 
@@ -136,7 +151,7 @@ export default class TimerBot {
 	}
 
 	/**
-	 * Gets the current state of every user the server has access to and emits an event for it
+	 * Get the current state of every user the server has access to and emits an event for it
 	 *
 	 * @param guildID - If given the only the events on this guild will be updated
 	 *
@@ -151,7 +166,7 @@ export default class TimerBot {
 				if (channel.type != 'voice') return;
 				await Promise.all(channel.members.map(async (member, key) => {
 					this.logger.debug(`In ${guild.name}/${channel.name} with ${member.nickname}`);
-					await this.voiceStateUpdate(member.voice);
+					await this.updateVoiceState(member.voice);
 				}));
 			}));
 		}));
@@ -159,55 +174,74 @@ export default class TimerBot {
 		
 	}
 
-	async voiceStateUpdate(oldState: Discord.VoiceState, newState?: Discord.VoiceState) {
-		if (!oldState.member) throw new Error('No member on voice state update');
-		const events: EventType[] = ['mute', 'deaf', 'streaming'];
-		const event  = {
-			guildID: newState?.guild?.id ?? oldState.guild?.id,
-			time: Date.now(),
-			userID: newState?.member?.id ?? oldState?.member?.id,
-			channelID: newState?.channel?.id ?? oldState.channel?.id,
-			needsVerification: false,
-			createdAt: new Date(),
-			endTime: 9007199254740991 as (9007199254740991)
-		}
-		if (!newState || newState.channelID != oldState.channelID) {
-			if (newState && newState.channelID != oldState.channelID) {
-				await this.db.storeEvent({
-					...event,
-					channelID: oldState.channel?.id,
-					guildID: oldState.guild?.id,
-					type: 'connect',
-					value: false,
-				});
-				if (newState.channelID == null) {
-					for (let e of events) {
-						await this.db.storeEvent({
-							...event,
-							type: e as EventType,
-							value: false
-						});
-					}
-				}
+	/**
+	 * Get the current state of an event on a specific user in a certain channel.
+	 * e.g. getEventState('abc', 'xyz', 'connect'), returns true if user 'xyz' is currently connected to channel 'abc'
+	 * @param channelID - Discord channel to check
+	 * @param userID - User to check for
+	 * @param type - Event type to check
+	 * */
+	async getEventState(channelID: string, userID: string, type: EventType): Promise<boolean> {
+		const channel = await this.client.channels.fetch(channelID);
+		if (!(channel instanceof Discord.VoiceChannel)) throw new TypeError('Cannot get voice state data if channel is not a voice channel');
 
+		const member = channel.members.get(userID);
+		if (!member) return false;
+
+		// `mute`, `deaf`, and `streaming` are all properties of a VoiceState, so they can be accessed directly
+		if (['mute', 'deaf', 'streaming'].includes(type)) return !!member.voice[type as keyof Discord.VoiceState];
+
+		// Since this member is connected to `channelID`, and the only possible event for `type` is currently `connected`
+		// The user must currently be connected
+		return true;
+	}
+
+	async updateVoiceState(newState: Discord.VoiceState, oldState?: Discord.VoiceState) {
+		if (!newState.member) throw new Error('No member on voice state update');
+		const events: EventType[] = ['mute', 'deaf', 'streaming'];
+		const eventData = {
+			channelID: newState.channelID,
+			guildID: newState.guild.id,
+			userID: newState.member.id
+		};
+
+		// If the user joined/left/switched a call
+		if (oldState?.channelID != newState.channelID) {
+			await this.db.endEvent({
+				type: 'connect',
+				userID: newState.member.id
+			});
+			if (newState.channelID == null) {
+				for (let e of events) {
+					await this.db.endEvent({
+						type: e as EventType,
+						userID: newState.member.id
+					});
+				}
 			}
-			if ((newState ?? oldState).channelID) {
-				await this.db.storeEvent({
-					...event,
+			else {
+				await this.db.startEvent({
 					type: 'connect',
-					value: true
-				});
+					...eventData
+				} as TimerEventStart);
 			}
-			
 		}
 
 		for (let name of events as (keyof Discord.VoiceState)[]) {
-			if (!newState || oldState[name] !== newState[name]) {
-				await this.db.storeEvent({
-					...event,
-					type: name as EventType,
-					value: !!((newState ?? oldState)[name])
-				});
+			if (!oldState || oldState[name] !== newState[name]) {
+				if (newState[name] && newState.channelID) {
+					await this.db.startEvent({
+						...eventData,
+						type: name as EventType
+					} as TimerEventStart)
+					this.logger.debug(`${name} event starting`);
+				}
+				else {
+					await this.db.endEvent({
+						type: name as EventType,
+						userID: newState.member.id
+					});
+				}
 			}
 		}
 	}
@@ -255,21 +289,24 @@ export default class TimerBot {
 	}
 
 	async queryTop(msg: CommandData, queryModifier: (query: PairsQuery) => PairsQuery = o => o): Promise<boolean> {
-			this.logger.debug(`'top' command contains: ${msg.command.join(', ')}`);
-			const startTime = TimerBot.getTimeInput(msg);
-			const count = TimerBot.getCountInput(msg);
-			const targets = msg.targets.map((u) => u.id);
+		this.logger.debug(`'top' command contains: ${msg.command.join(', ')}`);
+		const startTime = TimerBot.getTimeInput(msg);
+		const count = TimerBot.getCountInput(msg);
+		const targets = msg.targets.map((u) => u.id);
 
-			const times = await this.db.topTimes(queryModifier({ count, userID: targets.length == 1 ? (targets[0]) : (targets.length == 0 ? undefined : targets), startTime }));
-			const out = new Discord.MessageEmbed()
-					.setColor('#da004e')
-					.setTitle(startTime == 0 ? `Top pairs for all time` : `Top pairs for the past ${msToReadable(Date.now() - startTime)}`)
-					.addFields(times.map((time) => {
-						return { name: msToReadable(time.time), value: `<@${time._id.id}> with <@${time._id.with}>`}
-					}))
-					.setTimestamp();
-			this.logger.verbose(`Sending pairs data to ${msg.guild?.id} for ${msg.sender?.id}`);
-			msg.channel.send(out);
-			return true;
-		}
+		const times = await this.db.top(queryModifier({ count, userID: targets.length == 1 ? (targets[0]) : (targets.length == 0 ? undefined : targets), startTime }));
+		const out = new Discord.MessageEmbed()
+				.setColor('#da004e')
+				.setTitle(startTime == 0 ? `Top pairs for all time` : `Top pairs for the past ${msToReadable(Date.now() - startTime)}`)
+				.addFields(times.map((time) => {
+					const text = time._id.id == time._id.with ? 
+						`<@${time._id.id}> total` :
+						`<@${time._id.id}> with <@${time._id.with}>`;
+					return { name: msToReadable(time.time), value: text}
+				}))
+				.setTimestamp();
+		this.logger.verbose(`Sending pairs data to ${msg.guild?.id} for ${msg.sender?.id}`);
+		msg.channel.send(out);
+		return true;
+	}
 }

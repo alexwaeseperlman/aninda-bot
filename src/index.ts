@@ -21,7 +21,7 @@ if (mongoConnection == "") {
 
 logger.info('Credentials found');
 
-const bot = new TimerBot(apiKey, ".pairs", mongoConnection);
+const bot = new TimerBot(apiKey, "~pairs", mongoConnection);
 
 bot.start();
 
